@@ -1,0 +1,823 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ============================================================ -->
+<!-- JMeter Test Plan: restful-api.dev Performance Test           -->
+<!-- FILE: restful_api_test.jmx                                   -->
+<!-- API BASE URL: https://api.restful-api.dev                    -->
+<!-- OPERATIONS COVERED:                                          -->
+<!--   1. GET    /objects          - List all objects             -->
+<!--   2. GET    /objects/{id}     - Get single object            -->
+<!--   3. POST   /objects          - Create new object            -->
+<!--   4. PUT    /objects/{id}     - Full update object           -->
+<!--   5. PATCH  /objects/{id}     - Partial update object        -->
+<!--   6. DELETE /objects/{id}     - Delete object                -->
+<!-- ============================================================ -->
+
+<!-- Root JMeter test element. version="1.2" is required by JMeter -->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+
+  <!-- hashTree wraps child elements. Every JMeter element needs one -->
+  <hashTree>
+
+    <!-- ============================================================ -->
+    <!-- TEST PLAN: Top-level container for the entire test suite     -->
+    <!-- testname: shown in JMeter GUI title bar                      -->
+    <!-- ============================================================ -->
+    <TestPlan guiclass="TestPlanGui"
+              testclass="TestPlan"
+              testname="Restful API Performance Test Plan"
+              enabled="true">
+
+      <!-- Human-readable description shown in JMeter GUI -->
+      <stringProp name="TestPlan.comments">
+        Performance test for https://api.restful-api.dev
+        Covers: GET all, GET single, POST, PUT, PATCH, DELETE
+        Run: jmeter -n -t restful_api_test.jmx -l results.jtl -e -o report/
+      </stringProp>
+
+      <!-- false = threads run sequentially; true = parallel thread groups -->
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+
+      <!-- false = keep classpath clean; no extra jars needed here -->
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+
+      <!-- Empty user-defined variables section (we use inline values) -->
+      <elementProp name="TestPlan.user_defined_variables"
+                   elementType="Arguments"
+                   guiclass="ArgumentsPanel"
+                   testclass="Arguments"
+                   testname="User Defined Variables"
+                   enabled="true">
+        <collectionProp name="Arguments.arguments">
+
+          <!-- BASE_URL: Change this to switch between environments -->
+          <elementProp name="BASE_URL" elementType="Argument">
+            <stringProp name="Argument.name">BASE_URL</stringProp>
+            <!-- API host without https:// prefix (set in HTTP Request Defaults) -->
+            <stringProp name="Argument.value">api.restful-api.dev</stringProp>
+            <stringProp name="Argument.desc">Base hostname of the API under test</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+
+          <!-- OBJECT_ID: The ID used for GET single, PUT, PATCH, DELETE -->
+          <elementProp name="OBJECT_ID" elementType="Argument">
+            <stringProp name="Argument.name">OBJECT_ID</stringProp>
+            <!-- Using id=7 (Apple MacBook Pro 16) as the test target -->
+            <stringProp name="Argument.value">7</stringProp>
+            <stringProp name="Argument.desc">Object ID for single-object operations</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+
+        </collectionProp>
+      </elementProp>
+
+    </TestPlan>
+
+    <!-- Child elements of TestPlan go inside this hashTree -->
+    <hashTree>
+
+      <!-- ============================================================ -->
+      <!-- HTTP REQUEST DEFAULTS                                         -->
+      <!-- Shared config for all HTTP requests in this test plan        -->
+      <!-- Avoids repeating host/port/protocol in every request sampler -->
+      <!-- ============================================================ -->
+      <ConfigTestElement guiclass="HttpDefaultsGui"
+                         testclass="ConfigTestElement"
+                         testname="HTTP Request Defaults"
+                         enabled="true">
+
+        <!-- Protocol: https because the API uses TLS -->
+        <stringProp name="HTTPSampler.protocol">https</stringProp>
+
+        <!-- Server name / IP: uses the variable defined above -->
+        <stringProp name="HTTPSampler.domain">${BASE_URL}</stringProp>
+
+        <!-- Port 443 is standard for HTTPS; leave blank to use default -->
+        <stringProp name="HTTPSampler.port">443</stringProp>
+
+        <!-- UTF-8 ensures special characters in responses are handled -->
+        <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+
+        <!-- Connect timeout: 5000ms = 5 seconds to establish connection -->
+        <stringProp name="HTTPSampler.connect_timeout">5000</stringProp>
+
+        <!-- Response timeout: 10000ms = 10 seconds to receive response -->
+        <stringProp name="HTTPSampler.response_timeout">10000</stringProp>
+
+      </ConfigTestElement>
+      <hashTree/> <!-- Empty hashTree: HTTP Defaults has no child elements -->
+
+      <!-- ============================================================ -->
+      <!-- HTTP HEADER MANAGER                                           -->
+      <!-- Adds Content-Type: application/json to ALL requests          -->
+      <!-- Required for POST/PUT/PATCH which send JSON body             -->
+      <!-- ============================================================ -->
+      <HeaderManager guiclass="HeaderPanel"
+                     testclass="HeaderManager"
+                     testname="Global HTTP Headers"
+                     enabled="true">
+        <collectionProp name="HeaderManager.headers">
+
+          <!-- Content-Type header: tells server we send JSON -->
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">Content-Type</stringProp>
+            <stringProp name="Header.value">application/json</stringProp>
+          </elementProp>
+
+          <!-- Accept header: tells server we expect JSON back -->
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">Accept</stringProp>
+            <stringProp name="Header.value">application/json</stringProp>
+          </elementProp>
+
+        </collectionProp>
+      </HeaderManager>
+      <hashTree/> <!-- Empty hashTree: Header Manager has no child elements -->
+
+      <!-- ============================================================ -->
+      <!-- THREAD GROUP: Controls virtual users and test duration        -->
+      <!-- Think of this as simulating N concurrent users               -->
+      <!-- ============================================================ -->
+      <ThreadGroup guiclass="ThreadGroupGui"
+                   testclass="ThreadGroup"
+                   testname="API Load Test - Thread Group"
+                   enabled="true">
+
+        <!-- Comment explaining what this thread group tests -->
+        <stringProp name="TestElement.comments">
+          Simulates 5 concurrent users each running all 6 API operations.
+          Ramp-up over 10 seconds. Loop 3 times per user.
+        </stringProp>
+
+        <!-- Number of virtual users (threads) to simulate simultaneously -->
+        <stringProp name="ThreadGroup.num_threads">5</stringProp>
+
+        <!-- Ramp-up period in seconds to start all threads gradually -->
+        <!-- 10 seconds ramp-up for 5 threads = 1 new user every 2 sec -->
+        <stringProp name="ThreadGroup.ramp_time">10</stringProp>
+
+        <!-- Number of times each thread executes the test flow -->
+        <stringProp name="ThreadGroup.loop_count">3</stringProp>
+
+        <!-- false = run loop_count iterations; true = run forever -->
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+
+        <!-- Action on sampler error: continue to next sampler -->
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+
+        <!-- Loop controller: required child element for loop_count to work -->
+        <elementProp name="ThreadGroup.main_controller"
+                     elementType="LoopController"
+                     guiclass="LoopControlPanel"
+                     testclass="LoopController"
+                     testname="Loop Controller"
+                     enabled="true">
+          <!-- -1 = infinite loop (overridden by ThreadGroup.loop_count) -->
+          <stringProp name="LoopController.loops">-1</stringProp>
+          <!-- false = don't loop forever; use the count from ThreadGroup -->
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+
+      </ThreadGroup>
+
+      <!-- All HTTP requests (samplers) live inside this hashTree -->
+      <hashTree>
+
+        <!-- ============================================================ -->
+        <!-- SAMPLER 1: GET /objects                                       -->
+        <!-- Lists all available objects from the API                     -->
+        <!-- ============================================================ -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui"
+                          testclass="HTTPSamplerProxy"
+                          testname="GET - List All Objects"
+                          enabled="true">
+
+          <!-- Description shown in JMeter GUI comments panel -->
+          <stringProp name="TestElement.comments">
+            GET https://api.restful-api.dev/objects
+            Returns a predefined list of all sample objects.
+            Expected HTTP 200 with JSON array body.
+          </stringProp>
+
+          <!-- HTTP method: GET retrieves data without a request body -->
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+
+          <!-- API path for listing all objects -->
+          <stringProp name="HTTPSampler.path">/objects</stringProp>
+
+          <!-- false = no request body needed for GET -->
+          <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+
+          <!-- Follow HTTP redirects automatically -->
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+
+          <!-- true = use keep-alive connection for better performance -->
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+
+          <!-- Empty arguments: GET /objects has no query params here -->
+          <elementProp name="HTTPsampler.Arguments"
+                       elementType="Arguments"
+                       guiclass="HTTPArgumentsPanel"
+                       testclass="Arguments"
+                       testname="User Defined Variables"
+                       enabled="true">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+
+        </HTTPSamplerProxy>
+
+        <!-- Child elements for Sampler 1 (assertions, extractors) -->
+        <hashTree>
+
+          <!-- Assert that GET /objects returns HTTP 200 OK -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert HTTP 200 - List Objects"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <!-- Expected HTTP response code -->
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <!-- RESPONSE_CODE: check the status code, not the body -->
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <!-- false = do not negate this assertion -->
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <!-- 8 = EQUALS mode: must match exactly -->
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/> <!-- Assertion has no child elements -->
+
+          <!-- Assert the response body contains the JSON array marker -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert JSON Array in Body"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <!-- Body should start with [ indicating a JSON array -->
+              <stringProp name="49587">Google Pixel 6 Pro</stringProp>
+            </collectionProp>
+            <!-- RESPONSE_DATA: check the actual response body text -->
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <!-- 2 = CONTAINS mode: body must contain this substring -->
+            <intProp name="Assertion.test_type">2</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+        </hashTree>
+        <!-- End hashTree for Sampler 1 -->
+
+        <!-- ============================================================ -->
+        <!-- SAMPLER 2: GET /objects/{id}                                  -->
+        <!-- Retrieves a single object by its ID                          -->
+        <!-- ============================================================ -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui"
+                          testclass="HTTPSamplerProxy"
+                          testname="GET - Single Object by ID"
+                          enabled="true">
+
+          <stringProp name="TestElement.comments">
+            GET https://api.restful-api.dev/objects/${OBJECT_ID}
+            Retrieves one object identified by OBJECT_ID variable (default: 7).
+            Expected HTTP 200 with JSON object body containing id, name, data.
+          </stringProp>
+
+          <!-- HTTP method: GET for reading a single resource -->
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+
+          <!-- Path uses the OBJECT_ID variable defined in Test Plan -->
+          <stringProp name="HTTPSampler.path">/objects/${OBJECT_ID}</stringProp>
+
+          <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+
+          <elementProp name="HTTPsampler.Arguments"
+                       elementType="Arguments"
+                       guiclass="HTTPArgumentsPanel"
+                       testclass="Arguments"
+                       testname="User Defined Variables"
+                       enabled="true">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+
+        </HTTPSamplerProxy>
+
+        <hashTree>
+
+          <!-- Assert HTTP 200 for single object retrieval -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert HTTP 200 - Single Object"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+          <!-- Assert the response body contains the object ID -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert Object ID in Body"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <!-- Verify the returned object has the expected id field -->
+              <stringProp name="49587">Apple MacBook Pro 16</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <!-- 2 = CONTAINS: body must contain this text -->
+            <intProp name="Assertion.test_type">2</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+          <!-- JSON Extractor: captures the returned object name for later use -->
+          <JSONPathExtractor guiclass="JSONPathExtractorGui"
+                             testclass="JSONPathExtractor"
+                             testname="Extract Object Name"
+                             enabled="true">
+            <!-- Variable name to store extracted value -->
+            <stringProp name="JSONPathExtractor.referenceNames">extracted_name</stringProp>
+            <!-- JSONPath expression to get the name field from response -->
+            <stringProp name="JSONPathExtractor.jsonPathExprs">$.name</stringProp>
+            <!-- Default value if JSONPath extraction fails -->
+            <stringProp name="JSONPathExtractor.defaultValues">NOT_FOUND</stringProp>
+          </JSONPathExtractor>
+          <hashTree/>
+
+        </hashTree>
+        <!-- End hashTree for Sampler 2 -->
+
+        <!-- ============================================================ -->
+        <!-- SAMPLER 3: POST /objects                                      -->
+        <!-- Creates a new object and stores it in the API                -->
+        <!-- ============================================================ -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui"
+                          testclass="HTTPSamplerProxy"
+                          testname="POST - Create New Object"
+                          enabled="true">
+
+          <stringProp name="TestElement.comments">
+            POST https://api.restful-api.dev/objects
+            Creates a new Apple MacBook Pro 16 object.
+            Sends JSON body with name and data fields.
+            Expected HTTP 200 with created object including id and createdAt.
+          </stringProp>
+
+          <!-- HTTP method: POST creates a new resource -->
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+
+          <!-- Path for creating a new object -->
+          <stringProp name="HTTPSampler.path">/objects</stringProp>
+
+          <!-- true = send the raw JSON body defined below -->
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+
+          <!-- Request body: JSON payload for creating the new object -->
+          <elementProp name="HTTPsampler.Arguments"
+                       elementType="Arguments"
+                       guiclass="HTTPArgumentsPanel"
+                       testclass="Arguments"
+                       testname="User Defined Variables"
+                       enabled="true">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <!-- false = value is not URL-encoded (raw JSON) -->
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <!-- The actual JSON request body for POST -->
+                <stringProp name="Argument.value">{
+  "name": "Apple MacBook Pro 16",
+  "data": {
+    "year": 2019,
+    "price": 1849.99,
+    "CPU model": "Intel Core i9",
+    "Hard disk size": "1 TB"
+  }
+}</stringProp>
+                <!-- metadata separator used internally by JMeter -->
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+
+        </HTTPSamplerProxy>
+
+        <hashTree>
+
+          <!-- Assert POST returns HTTP 200 (this API returns 200 not 201) -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert HTTP 200 - Create Object"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+          <!-- Assert response body contains createdAt timestamp -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert createdAt in Response"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <!-- Created object must have a createdAt field -->
+              <stringProp name="49587">createdAt</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">2</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+          <!-- JSON Extractor: capture the new object id for subsequent requests -->
+          <JSONPathExtractor guiclass="JSONPathExtractorGui"
+                             testclass="JSONPathExtractor"
+                             testname="Extract Created Object ID"
+                             enabled="true">
+            <!-- Store new ID in variable 'created_id' -->
+            <stringProp name="JSONPathExtractor.referenceNames">created_id</stringProp>
+            <!-- JSONPath to extract the id field from POST response -->
+            <stringProp name="JSONPathExtractor.jsonPathExprs">$.id</stringProp>
+            <!-- Default if extraction fails -->
+            <stringProp name="JSONPathExtractor.defaultValues">7</stringProp>
+          </JSONPathExtractor>
+          <hashTree/>
+
+        </hashTree>
+        <!-- End hashTree for Sampler 3 -->
+
+        <!-- ============================================================ -->
+        <!-- SAMPLER 4: PUT /objects/{id}                                  -->
+        <!-- Fully replaces all fields of an existing object              -->
+        <!-- ============================================================ -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui"
+                          testclass="HTTPSamplerProxy"
+                          testname="PUT - Full Update Object"
+                          enabled="true">
+
+          <stringProp name="TestElement.comments">
+            PUT https://api.restful-api.dev/objects/${OBJECT_ID}
+            Completely replaces the object data with new values.
+            Sends full JSON body including new price and added color field.
+            Expected HTTP 200 with updated object including updatedAt.
+          </stringProp>
+
+          <!-- HTTP method: PUT replaces the entire resource -->
+          <stringProp name="HTTPSampler.method">PUT</stringProp>
+
+          <!-- Path uses OBJECT_ID variable to target the right object -->
+          <stringProp name="HTTPSampler.path">/objects/${OBJECT_ID}</stringProp>
+
+          <!-- true = we are sending a raw JSON request body -->
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+
+          <!-- Full replacement JSON body for PUT request -->
+          <elementProp name="HTTPsampler.Arguments"
+                       elementType="Arguments"
+                       guiclass="HTTPArgumentsPanel"
+                       testclass="Arguments"
+                       testname="User Defined Variables"
+                       enabled="true">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <!-- Full object body: all fields must be provided for PUT -->
+                <stringProp name="Argument.value">{
+  "name": "Apple MacBook Pro 16",
+  "data": {
+    "year": 2019,
+    "price": 2049.99,
+    "CPU model": "Intel Core i9",
+    "Hard disk size": "1 TB",
+    "color": "silver"
+  }
+}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+
+        </HTTPSamplerProxy>
+
+        <hashTree>
+
+          <!-- Assert PUT returns HTTP 200 OK -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert HTTP 200 - PUT Update"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+          <!-- Assert response contains updatedAt confirming the update worked -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert updatedAt in Response"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <!-- Full update must return updatedAt timestamp -->
+              <stringProp name="49587">updatedAt</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">2</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+          <!-- Assert the new price value appears in the PUT response -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert Updated Price 2049.99"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <!-- Verify the new price is reflected in the response -->
+              <stringProp name="49587">2049.99</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">2</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+        </hashTree>
+        <!-- End hashTree for Sampler 4 -->
+
+        <!-- ============================================================ -->
+        <!-- SAMPLER 5: PATCH /objects/{id}                                -->
+        <!-- Partially updates only specific fields of an object          -->
+        <!-- ============================================================ -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui"
+                          testclass="HTTPSamplerProxy"
+                          testname="PATCH - Partial Update Object"
+                          enabled="true">
+
+          <stringProp name="TestElement.comments">
+            PATCH https://api.restful-api.dev/objects/${OBJECT_ID}
+            Only updates the name field, leaving all other fields unchanged.
+            Sends minimal JSON body with only the fields to change.
+            Expected HTTP 200 with updated object including updatedAt.
+          </stringProp>
+
+          <!-- HTTP method: PATCH modifies only the provided fields -->
+          <stringProp name="HTTPSampler.method">PATCH</stringProp>
+
+          <!-- Same path as PUT but behaviour is partial update -->
+          <stringProp name="HTTPSampler.path">/objects/${OBJECT_ID}</stringProp>
+
+          <!-- true = sending a raw JSON body -->
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+
+          <!-- Partial update body: only the name field is changed -->
+          <elementProp name="HTTPsampler.Arguments"
+                       elementType="Arguments"
+                       guiclass="HTTPArgumentsPanel"
+                       testclass="Arguments"
+                       testname="User Defined Variables"
+                       enabled="true">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <!-- Only the name field is sent; other fields remain untouched -->
+                <stringProp name="Argument.value">{
+  "name": "Apple MacBook Pro 16 (Updated Name)"
+}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+
+        </HTTPSamplerProxy>
+
+        <hashTree>
+
+          <!-- Assert PATCH returns HTTP 200 OK -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert HTTP 200 - PATCH Update"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+          <!-- Assert the updated name appears in PATCH response -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert Updated Name in Response"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <!-- Verify the new name is in the response -->
+              <stringProp name="49587">Updated Name</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">2</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+        </hashTree>
+        <!-- End hashTree for Sampler 5 -->
+
+        <!-- ============================================================ -->
+        <!-- SAMPLER 6: DELETE /objects/{id}                               -->
+        <!-- Permanently removes an object by its ID                      -->
+        <!-- ============================================================ -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui"
+                          testclass="HTTPSamplerProxy"
+                          testname="DELETE - Remove Object"
+                          enabled="true">
+
+          <stringProp name="TestElement.comments">
+            DELETE https://api.restful-api.dev/objects/${OBJECT_ID}
+            Permanently deletes the object with the given ID.
+            No request body required for DELETE.
+            Expected HTTP 200 with confirmation message.
+          </stringProp>
+
+          <!-- HTTP method: DELETE removes the specified resource -->
+          <stringProp name="HTTPSampler.method">DELETE</stringProp>
+
+          <!-- Path targets the specific object to delete -->
+          <stringProp name="HTTPSampler.path">/objects/${OBJECT_ID}</stringProp>
+
+          <!-- false = no request body needed for DELETE -->
+          <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+
+          <!-- Empty arguments: DELETE sends no body -->
+          <elementProp name="HTTPsampler.Arguments"
+                       elementType="Arguments"
+                       guiclass="HTTPArgumentsPanel"
+                       testclass="Arguments"
+                       testname="User Defined Variables"
+                       enabled="true">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+
+        </HTTPSamplerProxy>
+
+        <hashTree>
+
+          <!-- Assert DELETE returns HTTP 200 OK -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert HTTP 200 - Delete Object"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+          <!-- Assert response contains deletion confirmation message -->
+          <ResponseAssertion guiclass="AssertionGui"
+                             testclass="ResponseAssertion"
+                             testname="Assert Deletion Confirmation"
+                             enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <!-- API returns: Object with id = X, has been deleted. -->
+              <stringProp name="49587">has been deleted</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_data</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">2</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+
+        </hashTree>
+        <!-- End hashTree for Sampler 6 -->
+
+        <!-- ============================================================ -->
+        <!-- RESPONSE TIME ASSERTION                                       -->
+        <!-- Applied globally: fails any request slower than 5 seconds   -->
+        <!-- ============================================================ -->
+        <DurationAssertion guiclass="DurationAssertionGui"
+                           testclass="DurationAssertion"
+                           testname="Response Time Under 5000ms"
+                           enabled="true">
+          <stringProp name="TestElement.comments">
+            Global assertion: any API call taking longer than 5000ms fails.
+            This catches performance degradation across all 6 operations.
+          </stringProp>
+          <!-- Maximum allowed response duration in milliseconds -->
+          <stringProp name="DurationAssertion.duration">5000</stringProp>
+        </DurationAssertion>
+        <hashTree/> <!-- Duration assertion has no child elements -->
+
+        <!-- ============================================================ -->
+        <!-- VIEW RESULTS TREE (disabled in CI/non-GUI mode)              -->
+        <!-- Used in JMeter GUI to inspect individual request/response    -->
+        <!-- ============================================================ -->
+        <ResultCollector guiclass="ViewResultsFullVisualizer"
+                         testclass="ResultCollector"
+                         testname="View Results Tree"
+                         enabled="false">
+          <!-- false = don't write to file when running in GUI debug mode -->
+          <boolProp name="ResultCollector.error_logging">false</boolProp>
+          <objProp>
+            <name>saveConfig</name>
+            <value class="SampleSaveConfiguration">
+              <!-- true = save timestamps in results -->
+              <time>true</time>
+              <!-- true = save latency (time to first byte) -->
+              <latency>true</latency>
+              <!-- true = save connect time -->
+              <connectTime>true</connectTime>
+              <!-- true = save response codes -->
+              <responseCode>true</responseCode>
+              <!-- true = save request/response messages -->
+              <responseMessage>true</responseMessage>
+              <!-- true = save thread names for debugging -->
+              <threadName>true</threadName>
+              <!-- true = save data type (text/binary) -->
+              <dataType>true</dataType>
+              <!-- true = save PASS/FAIL for each request -->
+              <success>true</success>
+              <!-- false = don't save full URL (saves disk space) -->
+              <url>false</url>
+              <!-- true = save response body for failed requests only -->
+              <responseData>false</responseData>
+              <!-- true = save sampler data (headers, body) -->
+              <samplerData>false</samplerData>
+              <!-- true = save assertions results -->
+              <assertions>true</assertions>
+              <!-- true = include sub-results from redirects -->
+              <subresults>true</subresults>
+              <!-- true = save bytes transferred -->
+              <bytes>true</bytes>
+              <!-- true = save throughput metric -->
+              <threadCounts>true</threadCounts>
+              <!-- true = save idle time -->
+              <idleTime>true</idleTime>
+            </value>
+          </objProp>
+          <!-- Empty filename: results saved to -l flag in CLI mode -->
+          <stringProp name="filename"></stringProp>
+        </ResultCollector>
+        <hashTree/>
+
+        <!-- ============================================================ -->
+        <!-- AGGREGATE REPORT (disabled in CI mode - view in GUI only)    -->
+        <!-- Shows avg/min/max/throughput/error% per sampler              -->
+        <!-- ============================================================ -->
+        <ResultCollector guiclass="StatVisualizer"
+                         testclass="ResultCollector"
+                         testname="Aggregate Report"
+                         enabled="false">
+          <boolProp name="ResultCollector.error_logging">false</boolProp>
+          <objProp>
+            <name>saveConfig</name>
+            <value class="SampleSaveConfiguration">
+              <time>true</time>
+              <latency>true</latency>
+              <responseCode>true</responseCode>
+              <success>true</success>
+              <bytes>true</bytes>
+              <threadCounts>true</threadCounts>
+            </value>
+          </objProp>
+          <stringProp name="filename"></stringProp>
+        </ResultCollector>
+        <hashTree/>
+
+      </hashTree>
+      <!-- End hashTree for Thread Group -->
+
+    </hashTree>
+    <!-- End hashTree for Test Plan -->
+
+  </hashTree>
+  <!-- End root hashTree -->
+
+</jmeterTestPlan>
