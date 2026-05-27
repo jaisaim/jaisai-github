@@ -1,0 +1,267 @@
+# =============================================================================
+# FILE: .github/workflows/jmeter-cicd.yml
+# PURPOSE: GitHub Actions CI/CD Pipeline for JMeter Performance Tests
+# TRIGGER: Runs on every push and pull_request to any branch
+# WHAT IT DOES:
+#   1. Checks out the repository code
+#   2. Sets up Java (required to run JMeter)
+#   3. Downloads and installs Apache JMeter 5.6.3
+#   4. Runs restful_api_test.jmx in non-GUI (headless) mode
+#   5. Generates an HTML performance dashboard report
+#   6. Uploads the HTML report as a GitHub Actions artifact
+#   7. Fails the pipeline if any JMeter assertions fail
+# =============================================================================
+
+# Workflow name displayed in the GitHub Actions tab
+name: JMeter API Performance Tests
+
+# =============================================================================
+# ON: Defines which GitHub events trigger this workflow
+# =============================================================================
+on:
+
+  # Trigger on push to any branch (** = wildcard for all branches)
+  push:
+    branches:
+      - "**"
+
+  # Trigger on pull requests targeting the main branch
+  pull_request:
+    branches:
+      - main
+
+  # Allow manual trigger via 'Run workflow' button in GitHub Actions UI
+  workflow_dispatch:
+
+# =============================================================================
+# ENV: Workflow-level environment variables reusable across all steps
+# =============================================================================
+env:
+  # Version of JMeter to download - change here to upgrade
+  JMETER_VERSION: "5.6.3"
+
+  # Local path where JMeter will be installed on the runner
+  JMETER_HOME: /opt/apache-jmeter-5.6.3
+
+  # Name of the JMeter test plan file in the repository root
+  JMX_FILE: restful_api_test.jmx
+
+  # JMeter Test Log: raw CSV output file with all request results
+  RESULTS_FILE: results.jtl
+
+  # Directory for the generated HTML performance report
+  REPORT_DIR: jmeter-report
+
+# =============================================================================
+# JOBS: The CI/CD jobs to run
+# =============================================================================
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # JOB: jmeter-performance-test
+  # Installs JMeter, runs tests, uploads HTML report artifact
+  # ---------------------------------------------------------------------------
+  jmeter-performance-test:
+
+    # Use the latest GitHub-hosted Ubuntu Linux runner
+    runs-on: ubuntu-latest
+
+    # Human-readable job name shown in GitHub Actions UI
+    name: Run JMeter API Performance Tests
+
+    steps:
+
+      # -----------------------------------------------------------------------
+      # STEP 1: CHECKOUT REPOSITORY
+      # Downloads repo files into the runner so JMX file is available
+      # -----------------------------------------------------------------------
+      - name: Checkout Repository
+        uses: actions/checkout@v4     # Official GitHub checkout action
+        with:
+          fetch-depth: 1              # Shallow clone: only latest commit (faster)
+
+      # -----------------------------------------------------------------------
+      # STEP 2: SET UP JAVA 11
+      # JMeter is a Java app - requires JDK 11+ to run
+      # -----------------------------------------------------------------------
+      - name: Set Up Java 11
+        uses: actions/setup-java@v4   # Official Java setup action
+        with:
+          distribution: 'temurin'     # Eclipse Temurin = free OpenJDK build
+          java-version: '11'          # JMeter 5.6.x requires Java 11 or 17
+
+      # -----------------------------------------------------------------------
+      # STEP 3: CACHE JMETER INSTALLATION
+      # Saves the JMeter installation between runs to avoid re-downloading
+      # Cache key includes version so it invalidates when version changes
+      # -----------------------------------------------------------------------
+      - name: Cache JMeter Installation
+        id: cache-jmeter              # Step ID referenced in next step condition
+        uses: actions/cache@v4        # Official caching action
+        with:
+          path: /opt/apache-jmeter-${{ env.JMETER_VERSION }}
+          key: jmeter-${{ env.JMETER_VERSION }}  # Cache invalidates on version change
+
+      # -----------------------------------------------------------------------
+      # STEP 4: DOWNLOAD AND INSTALL JMETER
+      # Only runs on cache miss (first run or version upgrade)
+      # Downloads official Apache JMeter binary tarball
+      # -----------------------------------------------------------------------
+      - name: Download and Install Apache JMeter
+        if: steps.cache-jmeter.outputs.cache-hit != 'true'  # Skip if cached
+        run: |
+          echo "Downloading Apache JMeter ${{ env.JMETER_VERSION }}..."
+          # wget -q = quiet download, -O = save as /tmp/jmeter.tgz
+          wget -q -O /tmp/jmeter.tgz \
+            https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-${{ env.JMETER_VERSION }}.tgz
+          # tar -xzf = extract gzip tarball, -C /opt/ = extract to /opt directory
+          tar -xzf /tmp/jmeter.tgz -C /opt/
+          echo "JMeter installed successfully at ${{ env.JMETER_HOME }}"
+
+      # -----------------------------------------------------------------------
+      # STEP 5: VERIFY JMETER WORKS
+      # Prints JMeter version to confirm installation is healthy
+      # -----------------------------------------------------------------------
+      - name: Verify JMeter Installation
+        run: |
+          # Print JMeter version - confirms Java + JMeter are working
+          ${{ env.JMETER_HOME }}/bin/jmeter --version
+          # List workspace contents to confirm JMX file is present
+          echo "Workspace contents:"
+          ls -la ${{ github.workspace }}/
+
+      # -----------------------------------------------------------------------
+      # STEP 6: CREATE REPORT DIRECTORY
+      # JMeter requires the -o report directory to be empty before running
+      # mkdir -p creates directory and all parents; no error if it exists
+      # -----------------------------------------------------------------------
+      - name: Create JMeter Report Directory
+        run: |
+          mkdir -p ${{ github.workspace }}/${{ env.REPORT_DIR }}
+          echo "Report output directory created: ${{ env.REPORT_DIR }}"
+
+      # -----------------------------------------------------------------------
+      # STEP 7: RUN JMETER PERFORMANCE TEST (HEADLESS/NON-GUI MODE)
+      # This is the core step that executes the .jmx test plan
+      # JMeter CLI flags:
+      #   -n         = non-GUI (headless) mode - required for CI/CD
+      #   -t <file>  = path to the JMX test plan
+      #   -l <file>  = path to write raw results JTL file
+      #   -e         = generate HTML report after test completes
+      #   -o <dir>   = output directory for the HTML report
+      # -----------------------------------------------------------------------
+      - name: Run JMeter Performance Test
+        run: |
+          echo "========================================"
+          echo "  Starting JMeter Performance Test"
+          echo "  API: https://api.restful-api.dev"
+          echo "  File: ${{ env.JMX_FILE }}"
+          echo "  VUsers: 5 | Loops: 3 | Ramp-up: 10s"
+          echo "========================================"
+
+          # Run JMeter in non-GUI mode with HTML report generation
+          ${{ env.JMETER_HOME }}/bin/jmeter \
+            -n \
+            -t ${{ github.workspace }}/${{ env.JMX_FILE }} \
+            -l ${{ github.workspace }}/${{ env.RESULTS_FILE }} \
+            -e \
+            -o ${{ github.workspace }}/${{ env.REPORT_DIR }}
+
+          echo "JMeter test execution completed"
+
+      # -----------------------------------------------------------------------
+      # STEP 8: PARSE AND DISPLAY RESULTS SUMMARY
+      # Reads the JTL CSV file and counts pass/fail requests
+      # Uses awk to parse CSV: 8th field is the success column (true/false)
+      # if: always() = run this step even when previous steps fail
+      # -----------------------------------------------------------------------
+      - name: Display Test Results Summary
+        if: always()   # Run even if JMeter step failed
+        run: |
+          echo "========================================"
+          echo "  JMETER RESULTS SUMMARY"
+          echo "========================================"
+          if [ -f "${{ github.workspace }}/${{ env.RESULTS_FILE }}" ]; then
+            # Count total requests (all lines minus the CSV header line)
+            TOTAL=$(tail -n +2 ${{ github.workspace }}/${{ env.RESULTS_FILE }} | wc -l)
+            # Count successes: awk filters rows where 8th CSV field is 'true'
+            PASSED=$(tail -n +2 ${{ github.workspace }}/${{ env.RESULTS_FILE }} | awk -F',' '$8=="true"' | wc -l)
+            # Count failures: awk filters rows where 8th CSV field is 'false'
+            FAILED=$(tail -n +2 ${{ github.workspace }}/${{ env.RESULTS_FILE }} | awk -F',' '$8=="false"' | wc -l)
+            echo "Total Requests : $TOTAL"
+            echo "Passed         : $PASSED"
+            echo "Failed         : $FAILED"
+            echo "========================================"
+            # Exit with error code 1 if any requests failed
+            if [ "$FAILED" -gt "0" ]; then
+              echo "RESULT: FAILED - $FAILED request(s) did not meet criteria"
+              exit 1
+            else
+              echo "RESULT: PASSED - All requests met performance criteria"
+            fi
+          else
+            echo "ERROR: JTL results file not found - JMeter may have crashed"
+            exit 1
+          fi
+
+      # -----------------------------------------------------------------------
+      # STEP 9: UPLOAD HTML PERFORMANCE REPORT
+      # Uploads the generated HTML dashboard as a downloadable artifact
+      # Accessible from the GitHub Actions run page > Artifacts section
+      # if: always() = upload even on failure for post-mortem debugging
+      # -----------------------------------------------------------------------
+      - name: Upload HTML Performance Report
+        if: always()   # Upload regardless of test pass/fail
+        uses: actions/upload-artifact@v4
+        with:
+          # Artifact name includes run number for easy identification
+          name: jmeter-html-report-${{ github.run_number }}
+          # Path to upload: entire HTML report folder
+          path: ${{ github.workspace }}/${{ env.REPORT_DIR }}
+          # Keep artifact for 30 days before automatic deletion
+          retention-days: 30
+
+      # -----------------------------------------------------------------------
+      # STEP 10: UPLOAD RAW JTL RESULTS
+      # Uploads the raw CSV results for external tool processing
+      # -----------------------------------------------------------------------
+      - name: Upload Raw JTL Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmeter-jtl-results-${{ github.run_number }}
+          path: ${{ github.workspace }}/${{ env.RESULTS_FILE }}
+          retention-days: 30
+
+      # -----------------------------------------------------------------------
+      # STEP 11: POST MARKDOWN SUMMARY TO GITHUB ACTIONS JOB SUMMARY
+      # Writes a formatted table visible on the Actions run page
+      # GITHUB_STEP_SUMMARY is a special GitHub env var for job summary
+      # -----------------------------------------------------------------------
+      - name: Post Job Summary
+        if: always()
+        run: |
+          echo "## JMeter Performance Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| API | https://api.restful-api.dev |" >> $GITHUB_STEP_SUMMARY
+          echo "| JMX File | ${{ env.JMX_FILE }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| JMeter Version | ${{ env.JMETER_VERSION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Virtual Users | 5 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Loop Count | 3 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Ramp-up Period | 10 seconds |" >> $GITHUB_STEP_SUMMARY
+          echo "| Response Timeout | 10 seconds |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### API Operations Tested" >> $GITHUB_STEP_SUMMARY
+          echo "| # | Method | Endpoint | Purpose |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|--------|----------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 1 | GET | /objects | List all objects |" >> $GITHUB_STEP_SUMMARY
+          echo "| 2 | GET | /objects/{id} | Get single object by ID |" >> $GITHUB_STEP_SUMMARY
+          echo "| 3 | POST | /objects | Create new object |" >> $GITHUB_STEP_SUMMARY
+          echo "| 4 | PUT | /objects/{id} | Full replacement update |" >> $GITHUB_STEP_SUMMARY
+          echo "| 5 | PATCH | /objects/{id} | Partial field update |" >> $GITHUB_STEP_SUMMARY
+          echo "| 6 | DELETE | /objects/{id} | Delete object by ID |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> Download the HTML report from the Artifacts section for full graphs and metrics" >> $GITHUB_STEP_SUMMARY
